@@ -1,4 +1,8 @@
 import { createContext, useState } from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import Home from "./screens/home/Home";
+import Receiver from "./screens/receiver/Reciever";
+import Sender from "./screens/sender/Sender";
 
 type SenderContextType = {
   isSender: boolean;
@@ -13,14 +17,15 @@ function App() {
   const [isSender, setIsSender] = useState(false);
 
   return (
-    <SenderContext.Provider value={{ isSender, setIsSender }}>
-      <>
-        <div>
-          test text
-          <div className="text-green-500 bg-green-100">Test</div>
-        </div>
-      </>
-    </SenderContext.Provider>
+    <Router>
+      <SenderContext.Provider value={{ isSender, setIsSender }}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/sender" element={<Sender />} />
+          <Route path="/receiver" element={<Receiver />} />
+        </Routes>
+      </SenderContext.Provider>
+    </Router>
   );
 }
 
