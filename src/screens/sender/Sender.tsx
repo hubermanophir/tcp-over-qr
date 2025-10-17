@@ -1,3 +1,5 @@
+import { Outlet } from "react-router-dom";
+
 export default function Sender() {
-  return <div>Sender</div>;
+  return <Outlet />;
 }

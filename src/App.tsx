@@ -1,32 +1,26 @@
-import { createContext, useState } from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { createHashRouter, RouterProvider } from "react-router-dom";
 import Home from "./screens/home/Home";
 import Receiver from "./screens/receiver/Reciever";
 import Sender from "./screens/sender/Sender";
+import FileSelect from "./screens/sender/FileSelect";
+import QRSender from "./screens/sender/QRSender";
 
-type SenderContextType = {
-  isSender: boolean;
-  setIsSender: React.Dispatch<React.SetStateAction<boolean>>;
-};
+const router = createHashRouter([
+  { path: "/", element: <Home /> },
+  {
+    path: "/sender",
+    element: <Sender />,
+    children: [
+      { index: true, element: <FileSelect /> },
+      { path: "qr", element: <QRSender /> },
+    ],
+  },
+  { path: "/receiver", element: <Receiver /> },
+  { path: "*", element: <div>404 Not Found</div> },
+]);
 
-export const SenderContext = createContext<SenderContextType>({
-  isSender: false,
-  setIsSender: (_value: any) => {},
-});
 function App() {
-  const [isSender, setIsSender] = useState(false);
-
-  return (
-    <Router>
-      <SenderContext.Provider value={{ isSender, setIsSender }}>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/sender" element={<Sender />} />
-          <Route path="/receiver" element={<Receiver />} />
-        </Routes>
-      </SenderContext.Provider>
-    </Router>
-  );
+  return <RouterProvider router={router} />;
 }
 
 export default App;
