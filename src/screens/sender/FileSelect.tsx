@@ -1,21 +1,20 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import BackToHome from "../../components/BackToHome";
+interface FileSelectProps {
+  file: File | null;
+  setFile: (file: File | null) => void;
+  name: string;
+  setName: (name: string) => void;
+}
 
-export default function FileSelect() {
-  const [file, setFile] = useState<File | null>(null);
-  const [name, setName] = useState("");
-  const navigate = useNavigate();
+export default function FileSelect({ file, setFile, name, setName }: FileSelectProps) {
 
   const handleSubmit = () => {
     if (file && name.trim()) {
-      navigate("/sender/qr");
+      // Navigate to next step
     }
   };
 
   return (
-    <div className="min-h-screen  p-4">
-      <BackToHome />
+    <div className="p-4">
       <h2 className="text-2xl mb-4">Select File and Name</h2>
       <div className="mb-4">
         <label className="block text-sm font-medium text-gray-700">

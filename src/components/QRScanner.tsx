@@ -1,13 +1,26 @@
 import { useState } from "react";
 import { useZxing } from "react-zxing";
 
-export default function QRScanner() {
-  const [result, setResult] = useState("");
+interface QRScannerProps {
+  setQrData: React.Dispatch<React.SetStateAction<Uint8Array>>;
+}
+
+export default function QRScanner({ setQrData }: QRScannerProps) {
   const [error, setError] = useState("");
 
   const { ref } = useZxing({
     onDecodeResult(result) {
-      setResult(result.getText());
+      try {
+        const base64Data = result.getText();
+        const binaryString = atob(base64Data);
+        const uint8Array = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          uint8Array[i] = binaryString.charCodeAt(i);
+        }
+        setQrData(uint8Array);
+      } catch (err) {
+        setError("Failed to decode QR data.");
+      }
     },
     onError(err) {
       setError(String(err));
@@ -23,7 +36,6 @@ export default function QRScanner() {
         style={{ width: "300px", height: "300px" }}
       />
       {error && <p className="text-red-500 mt-2">Error: {error}</p>}
-      {result && <p className="mt-2">Scanned Data: {result}</p>}
     </div>
   );
 }
