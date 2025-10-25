@@ -1,151 +1,219 @@
 import { MessageType, Size } from "./types";
 
-export abstract class Message {
+abstract class Message {
   type: MessageType;
-  chunkIndex: number;
-  totalChunks: number;
-  payload: Uint8Array;
-
-  constructor(type: MessageType, chunkIndex: number = 0, totalChunks: number = 0, payload: Uint8Array = new Uint8Array()) {
+  constructor(type: MessageType) {
     this.type = type;
-    this.chunkIndex = chunkIndex;
-    this.totalChunks = totalChunks;
-    this.payload = payload;
   }
 
-  serialize(): Uint8Array {
-    const buffer = new ArrayBuffer(Size.TYPE_SIZE + Size.CHUNK_INDEX_SIZE + Size.TOTAL_CHUNKS_SIZE + Size.FILE_SIZE + this.payload.length);
-    const view = new DataView(buffer);
-    let offset = 0;
-
-    view.setUint8(offset, this.type);
-    offset += Size.TYPE_SIZE;
-
-    view.setUint32(offset, this.chunkIndex, true); // little-endian
-    offset += Size.CHUNK_INDEX_SIZE;
-
-    view.setUint32(offset, this.totalChunks, true);
-    offset += Size.TOTAL_CHUNKS_SIZE;
-
-    view.setUint32(offset, this.payload.length, true);
-    offset += Size.FILE_SIZE;
-
-    for (let i = 0; i < this.payload.length; i++) {
-      view.setUint8(offset + i, this.payload[i]);
-    }
-
-    return new Uint8Array(buffer);
-  }
-
-  static deserialize(data: Uint8Array): Message {
-    const view = new DataView(data.buffer);
-    let offset = 0;
-
-    const type = view.getUint8(offset) as MessageType;
-    offset += Size.TYPE_SIZE;
-
-    const chunkIndex = view.getUint32(offset, true);
-    offset += Size.CHUNK_INDEX_SIZE;
-
-    const totalChunks = view.getUint32(offset, true);
-    offset += Size.TOTAL_CHUNKS_SIZE;
-
-    const payloadLength = view.getUint32(offset, true);
-    offset += Size.FILE_SIZE;
-
-    const payload = data.slice(offset, offset + payloadLength);
-
-    switch (type) {
-      case MessageType.INITIATE:
-        return InitiateMessage.deserializeFromPayload(payload, totalChunks);
-      case MessageType.DATA_CHUNK:
-        return new DataChunkMessage(chunkIndex, totalChunks, payload);
-      case MessageType.ACK:
-        return new AckMessage(chunkIndex);
-      case MessageType.NACK:
-        return new NackMessage(chunkIndex);
-      case MessageType.FINISH:
-        return new FinishMessage();
-      case MessageType.ERROR:
-        return ErrorMessage.deserializeFromPayload(payload);
-      default:
-        throw new Error(`Unknown message type: ${type}`);
-    }
-  }
+  abstract serialize(): Uint8Array;
+  abstract deserialize(data: Uint8Array): Message;
 }
 
-export class InitiateMessage extends Message {
+export class DataInfoMessage extends Message {
   fileName: string;
   fileSize: number;
 
-  constructor(fileName: string, fileSize: number, totalChunks: number) {
-    const payload = new Uint8Array(Size.FILE_NAME_SIZE + Size.FILE_SIZE);
-    const view = new DataView(payload.buffer);
-
-    // Encode file name (truncate if too long)
-    const nameBytes = new TextEncoder().encode(fileName.slice(0, Size.FILE_NAME_SIZE - 1));
-    for (let i = 0; i < nameBytes.length; i++) {
-      view.setUint8(i, nameBytes[i]);
-    }
-    // Null terminate
-    view.setUint8(nameBytes.length, 0);
-
-    view.setUint32(Size.FILE_NAME_SIZE, fileSize, true);
-
-    super(MessageType.INITIATE, 0, totalChunks, payload);
+  constructor(fileName: string, fileSize: number) {
+    super(MessageType.FILE_DATA);
     this.fileName = fileName;
     this.fileSize = fileSize;
   }
 
-  static deserializeFromPayload(payload: Uint8Array, totalChunks: number): InitiateMessage {
-    const view = new DataView(payload.buffer);
-    const nameBytes = [];
-    for (let i = 0; i < Size.FILE_NAME_SIZE; i++) {
-      const byte = view.getUint8(i);
-      if (byte === 0) break;
-      nameBytes.push(byte);
+  serialize(): Uint8Array {
+    const buffer = new Uint8Array(Size.TYPE + Size.FILE_NAME + Size.FILE_SIZE);
+    const dataView = new DataView(buffer.buffer);
+    let offset = 0;
+
+    dataView.setUint8(offset, this.type);
+    offset += Size.TYPE;
+    const fileNameBytes = new TextEncoder().encode(this.fileName);
+    const fileNameBuffer = new Uint8Array(Size.FILE_NAME);
+    fileNameBuffer.set(fileNameBytes.slice(0, Size.FILE_NAME));
+    buffer.set(fileNameBuffer, offset);
+    offset += Size.FILE_NAME;
+
+    const fileSizeBytes = new Uint8Array(Size.FILE_SIZE);
+    let fileSize = this.fileSize;
+    for (let i = 0; i < Size.FILE_SIZE; i++) {
+      fileSizeBytes[i] = fileSize & 0xff;
+      fileSize >>>= 8;
     }
-    const fileName = new TextDecoder().decode(new Uint8Array(nameBytes));
-    const fileSize = view.getUint32(Size.FILE_NAME_SIZE, true);
-    return new InitiateMessage(fileName, fileSize, totalChunks);
+    buffer.set(fileSizeBytes, offset);
+    offset += Size.FILE_SIZE;
+
+    return buffer;
+  }
+  deserialize(data: Uint8Array): DataInfoMessage {
+    const dataView = new DataView(data.buffer);
+    let offset = 0;
+
+    // Type (1 byte)
+    dataView.getUint8(offset); // Read and discard type
+    offset += Size.TYPE;
+
+    // File Name (100 bytes)
+    const fileNameBytes = data.slice(offset, offset + Size.FILE_NAME);
+    const fileName = new TextDecoder().decode(fileNameBytes).replace(/\0/g, ""); // Remove null bytes
+    offset += Size.FILE_NAME;
+
+    // File Size (5 bytes) - little endian
+    let fileSize = 0;
+    for (let i = 0; i < Size.FILE_SIZE; i++) {
+      fileSize |= dataView.getUint8(offset + i) << (i * 8);
+    }
+    offset += Size.FILE_SIZE;
+    return new DataInfoMessage(fileName, fileSize);
+  }
+}
+
+export class DataInfoACKMessage extends Message {
+  fileName: string;
+  fileSize: number;
+
+  constructor(fileName: string, fileSize: number) {
+    super(MessageType.ACK_FILE_DATA);
+    this.fileName = fileName;
+    this.fileSize = fileSize;
+  }
+
+  serialize(): Uint8Array {
+    const buffer = new Uint8Array(Size.TYPE + Size.FILE_NAME + Size.FILE_SIZE);
+    const dataView = new DataView(buffer.buffer);
+    let offset = 0;
+
+    dataView.setUint8(offset, this.type);
+    offset += Size.TYPE;
+    const fileNameBytes = new TextEncoder().encode(this.fileName);
+    const fileNameBuffer = new Uint8Array(Size.FILE_NAME);
+    fileNameBuffer.set(fileNameBytes.slice(0, Size.FILE_NAME));
+    buffer.set(fileNameBuffer, offset);
+    offset += Size.FILE_NAME;
+
+    const fileSizeBytes = new Uint8Array(Size.FILE_SIZE);
+    let fileSize = this.fileSize;
+    for (let i = 0; i < Size.FILE_SIZE; i++) {
+      fileSizeBytes[i] = fileSize & 0xff;
+      fileSize >>>= 8;
+    }
+    buffer.set(fileSizeBytes, offset);
+    offset += Size.FILE_SIZE;
+
+    return buffer;
+  }
+  deserialize(data: Uint8Array): DataInfoACKMessage {
+    const dataView = new DataView(data.buffer);
+    let offset = 0;
+
+    // Type (1 byte)
+    dataView.getUint8(offset); // Read and discard type
+    offset += Size.TYPE;
+
+    // File Name (100 bytes)
+    const fileNameBytes = data.slice(offset, offset + Size.FILE_NAME);
+    const fileName = new TextDecoder().decode(fileNameBytes).replace(/\0/g, ""); // Remove null bytes
+    offset += Size.FILE_NAME;
+
+    // File Size (5 bytes) - little endian
+    let fileSize = 0;
+    for (let i = 0; i < Size.FILE_SIZE; i++) {
+      fileSize |= dataView.getUint8(offset + i) << (i * 8);
+    }
+    offset += Size.FILE_SIZE;
+    return new DataInfoACKMessage(fileName, fileSize);
   }
 }
 
 export class DataChunkMessage extends Message {
-  constructor(chunkIndex: number, totalChunks: number, data: Uint8Array) {
-    super(MessageType.DATA_CHUNK, chunkIndex, totalChunks, data);
+  offset: number;
+  payloadSize: number;
+  data: Uint8Array;
+  constructor(offset: number, data: Uint8Array) {
+    super(MessageType.DATA_CHUNK);
+    this.offset = offset;
+    this.payloadSize = data.length;
+    this.data = data;
+  }
+
+  serialize(): Uint8Array {
+    const buffer = new Uint8Array(
+      Size.TYPE + Size.OFFSET + Size.PAYLOAD_SIZE + this.payloadSize
+    );
+    const dataView = new DataView(buffer.buffer);
+    let offset = 0;
+
+    dataView.setUint8(offset, this.type);
+    offset += Size.TYPE;
+
+    dataView.setUint32(offset, this.offset, true); // little endian
+    offset += Size.OFFSET;
+
+    dataView.setUint32(offset, this.payloadSize, true); // little endian
+    offset += Size.PAYLOAD_SIZE;
+
+    buffer.set(this.data, offset);
+    offset += this.payloadSize;
+
+    return buffer;
+  }
+
+  deserialize(data: Uint8Array): DataChunkMessage {
+    const dataView = new DataView(data.buffer);
+    let offset = 0;
+
+    // Type (1 byte)
+    dataView.getUint8(offset); // Read and discard type
+    offset += Size.TYPE;
+
+    // Offset (4 bytes)
+    const chunkOffset = dataView.getUint32(offset, true); // little endian
+    offset += Size.OFFSET;
+
+    // Payload Size (4 bytes)
+    const payloadSize = dataView.getUint32(offset, true); // little endian
+    offset += Size.PAYLOAD_SIZE;
+
+    // Data (payloadSize bytes)
+    const chunkData = data.slice(offset, offset + payloadSize);
+    offset += payloadSize;
+
+    return new DataChunkMessage(chunkOffset, chunkData);
   }
 }
 
-export class AckMessage extends Message {
-  constructor(chunkIndex: number) {
-    super(MessageType.ACK, chunkIndex);
-  }
-}
-
-export class NackMessage extends Message {
-  constructor(chunkIndex: number) {
-    super(MessageType.NACK, chunkIndex);
-  }
-}
-
-export class FinishMessage extends Message {
-  constructor() {
-    super(MessageType.FINISH);
-  }
-}
-
-export class ErrorMessage extends Message {
-  errorMessage: string;
-
-  constructor(errorMessage: string) {
-    const payload = new TextEncoder().encode(errorMessage);
-    super(MessageType.ERROR, 0, 0, payload);
-    this.errorMessage = errorMessage;
+export class DataChunkACKMessage extends Message {
+  offset: number;
+  constructor(offset: number) {
+    super(MessageType.ACK_DATA_CHUNK);
+    this.offset = offset;
   }
 
-  static deserializeFromPayload(payload: Uint8Array): ErrorMessage {
-    const errorMessage = new TextDecoder().decode(payload);
-    return new ErrorMessage(errorMessage);
+  serialize(): Uint8Array {
+    const buffer = new Uint8Array(Size.TYPE + Size.OFFSET);
+    const dataView = new DataView(buffer.buffer);
+    let offset = 0;
+
+    dataView.setUint8(offset, this.type);
+    offset += Size.TYPE;
+
+    dataView.setUint32(offset, this.offset, true); // little endian
+    offset += Size.OFFSET;
+
+    return buffer;
+  }
+
+  deserialize(data: Uint8Array): DataChunkACKMessage {
+    const dataView = new DataView(data.buffer);
+    let offset = 0;
+
+    // Type (1 byte)
+    dataView.getUint8(offset); // Read and discard type
+    offset += Size.TYPE;
+
+    // Offset (4 bytes)
+    const chunkOffset = dataView.getUint32(offset, true); // little endian
+    offset += Size.OFFSET;
+
+    return new DataChunkACKMessage(chunkOffset);
   }
 }

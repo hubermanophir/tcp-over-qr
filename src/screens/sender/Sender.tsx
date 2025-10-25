@@ -1,46 +1,34 @@
 import { useState } from "react";
-import { FileAddOutlined } from "@ant-design/icons";
-import { Steps } from "antd";
-import BackToHome from "../../components/BackToHome";
-import FileSelect from "./FileSelect";
-import QRSender from "./QRSender";
-import { useFileChunkReader } from "./hooks";
+import { useSender } from "./senderHooks";
+import { Size } from "../../protocol/types";
+import SendAndReceive from "../../components/SendAndReceive";
 
 export default function Sender() {
-  const [step, setStep] = useState(0);
   const [file, setFile] = useState<File | null>(null);
-  const [name, setName] = useState("");
-//   const { nextChunk, isFinished } = useFileChunkReader();
+  const [sendBytes, setSendBytes] = useState(new Uint8Array());
+  const [receiveBytes, setReceiveBytes] = useState(new Uint8Array());
+  const [offset, setOffset] = useState(0);
+
+  const { getNextChunk, isFinished } = useSender(
+    file!,
+    Size.PAYLOAD_SIZE,
+    offset,
+    setOffset
+  );
+
   return (
-    <>
-      <BackToHome />
-
-      <div className="p-4">
-        {step === 0 && (
-          <FileSelect
-            file={file}
-            setFile={setFile}
-            name={name}
-            setName={setName}
-          />
-        )}
-        {step === 1 && <QRSender file={file} name={name} />}
-      </div>
-
-      <Steps
-        current={step}
-        items={[
-          {
-            title: "Select File",
-            icon: <FileAddOutlined />,
-            onClick: () => setStep(0),
-          },
-          {
-            title: "Send File",
-            onClick: () => setStep(1),
-          },
-        ]}
+    <div>
+      <h1>Sender</h1>
+      <input
+        type="file"
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            setFile(e.target.files[0]);
+          }
+        }}
       />
-    </>
+      {file && <p>Selected file: {file.name}</p>}
+      <SendAndReceive setQrData={} sendData={} />
+    </div>
   );
 }

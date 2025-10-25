@@ -1,6 +1,6 @@
 import { createHashRouter, RouterProvider } from "react-router-dom";
 import Home from "./screens/home/Home";
-import Receiver from "./screens/receiver/Reciever";
+import Receiver from "./screens/receiver/Receiver";
 import Sender from "./screens/sender/Sender";
 
 const router = createHashRouter([
